@@ -1,30 +1,25 @@
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import List, Optional
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_db
+from schemas.book import BookCreate, BookResponse, PaginatedBooksResponse
+from repository import book_repo
+from typing import Optional
 from uuid import UUID
-from schemas.book import BookCreate, BookResponse, BookStatus
-from services import book_service
 
 router = APIRouter()
 
-@router.get("/books", response_model=List[BookResponse])
+@router.post("/books", response_model=BookResponse, status_code=201)
+async def create_book(book: BookCreate, db: AsyncSession = Depends(get_db)):
+    return await book_repo.create_book(db, book)
+
+@router.get("/books", response_model=PaginatedBooksResponse)
 async def get_books(
-    status: Optional[BookStatus] = None,
-    author: Optional[str] = None,
-    sort_by: Optional[str] = Query(None, description="sort by 'title' or 'year'")
+    limit: int = Query(10, ge=1), 
+    cursor: Optional[UUID] = None, 
+    db: AsyncSession = Depends(get_db)
 ):
-    return await book_service.fetch_books(status, author, sort_by)
-
-@router.get("/books/{book_id}", response_model=BookResponse)
-async def get_book(book_id: UUID):
-    book = await book_service.fetch_book(book_id)
-    if not book:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Книгу не знайдено")
-    return book
-
-@router.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-async def add_book(book: BookCreate):
-    return await book_service.create_book(book)
-
-@router.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_book(book_id: UUID):
-    await book_service.remove_book(book_id)
+    books = await book_repo.get_all_books(db, limit, cursor)
+    
+    next_cursor = books[-1].id if len(books) == limit else None
+    
+    return {"items": books, "next_cursor": next_cursor}

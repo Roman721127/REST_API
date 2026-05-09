@@ -1,22 +1,21 @@
-from typing import List, Dict, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from models.book import BookORM
+from schemas.book import BookCreate
+from typing import Optional
 from uuid import UUID
-from models import db
 
-async def get_all_books() -> List[Dict]:
-    return db
+async def get_all_books(db: AsyncSession, limit: int, cursor: Optional[UUID] = None):
+    stmt = select(BookORM).order_by(BookORM.id).limit(limit)
+    if cursor:
+        stmt = stmt.where(BookORM.id > cursor)
+    
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
-async def get_book_by_id(book_id: UUID) -> Optional[Dict]:
-    for book in db:
-        if book["id"] == book_id:
-            return book
-    return None
-
-async def add_book(book_data: Dict) -> Dict:
-    db.append(book_data)
-    return book_data
-
-async def delete_book(book_id: UUID) -> bool:
-    global db
-    initial_length = len(db)
-    db[:] = [book for book in db if book["id"] != book_id]
-    return len(db) < initial_length
+async def create_book(db: AsyncSession, book: BookCreate):
+    new_book = BookORM(**book.model_dump())
+    db.add(new_book)
+    await db.commit()
+    await db.refresh(new_book)
+    return new_book

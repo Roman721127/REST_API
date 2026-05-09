@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from uuid import UUID, uuid4
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional
+from uuid import UUID
 from enum import Enum
 
 class BookStatus(str, Enum):
@@ -8,10 +8,10 @@ class BookStatus(str, Enum):
     BORROWED = "borrowed"
 
 class BookBase(BaseModel):
-    title: str = Field(..., description="Назва книги")
+    title: str
     author: str
     description: Optional[str] = None
-    status: BookStatus = BookStatus.AVAILABLE
+    status: BookStatus
     year: int
 
 class BookCreate(BookBase):
@@ -19,3 +19,9 @@ class BookCreate(BookBase):
 
 class BookResponse(BookBase):
     id: UUID
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedBooksResponse(BaseModel):
+    items: List[BookResponse]
+    next_cursor: Optional[UUID] = None

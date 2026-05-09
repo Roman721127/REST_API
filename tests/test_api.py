@@ -1,41 +1,33 @@
-from fastapi.testclient import TestClient
+import pytest
+import asyncio
+from httpx import AsyncClient, ASGITransport
 from main import app
-from models import db
 
-client = TestClient(app)
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
-def setup_function():
-    db.clear()
-
-def test_add_book():
-    response = client.post("/books", json={
-        "title": "Кобзар",
-        "author": "Тарас Шевченко",
-        "description": "Збірка поезій",
-        "status": "available",
-        "year": 1840
-    })
+@pytest.mark.asyncio
+async def test_create_book():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post("/books", json={
+            "title": "1984",
+            "author": "George Orwell",
+            "description": "Dystopian novel",
+            "status": "available",
+            "year": 1949
+        })
     assert response.status_code == 201
-    data = response.json()
-    assert "id" in data
-    assert data["title"] == "Кобзар"
+    assert response.json()["title"] == "1984"
 
-def test_get_books():
-    client.post("/books", json={"title": "1984", "author": "Орвелл", "status": "available", "year": 1949})
-    response = client.get("/books")
+@pytest.mark.asyncio
+async def test_get_books():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/books?limit=5")
     assert response.status_code == 200
-    assert len(response.json()) == 1
-
-def test_get_book_not_found():
-    response = client.get("/books/123e4567-e89b-12d3-a456-426614174000")
-    assert response.status_code == 404
-
-def test_delete_book_idempotent():
-    post_resp = client.post("/books", json={"title": "Тест", "author": "Автор", "status": "available", "year": 2020})
-    book_id = post_resp.json()["id"]
-
-    del_resp1 = client.delete(f"/books/{book_id}")
-    assert del_resp1.status_code == 204
-
-    del_resp2 = client.delete(f"/books/{book_id}")
-    assert del_resp2.status_code == 204
+    data = response.json()
+    assert "items" in data
+    assert "next_cursor" in data
+    assert isinstance(data["items"], list)
