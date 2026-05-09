@@ -1,30 +1,27 @@
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, status, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 from uuid import UUID
-from schemas.book import BookCreate, BookResponse, BookStatus
-from services import book_service
+from schemas.book import BookCreate, BookResponse
+from repository import book_repo
+from database import get_db
 
 router = APIRouter()
 
 @router.get("/books", response_model=List[BookResponse])
-async def get_books(
-    status: Optional[BookStatus] = None,
-    author: Optional[str] = None,
-    sort_by: Optional[str] = Query(None, description="sort by 'title' or 'year'")
-):
-    return await book_service.fetch_books(status, author, sort_by)
+async def get_books(limit: int = Query(10, ge=1), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
+    return await book_repo.get_all_books(db, limit, offset)
 
 @router.get("/books/{book_id}", response_model=BookResponse)
-async def get_book(book_id: UUID):
-    book = await book_service.fetch_book(book_id)
-    if not book:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Книгу не знайдено")
+async def get_book(book_id: UUID, db: AsyncSession = Depends(get_db)):
+    book = await book_repo.get_book_by_id(db, book_id)
+    if not book: raise HTTPException(404)
     return book
 
-@router.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-async def add_book(book: BookCreate):
-    return await book_service.create_book(book)
+@router.post("/books", response_model=BookResponse, status_code=201)
+async def add_book(book: BookCreate, db: AsyncSession = Depends(get_db)):
+    return await book_repo.add_book(db, book.model_dump())
 
-@router.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_book(book_id: UUID):
-    await book_service.remove_book(book_id)
+@router.delete("/books/{book_id}", status_code=204)
+async def delete_book(book_id: UUID, db: AsyncSession = Depends(get_db)):
+    await book_repo.delete_book(db, book_id)

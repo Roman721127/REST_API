@@ -19,3 +19,5 @@ class BookCreate(BookBase):
 
 class BookResponse(BookBase):
     id: UUID
+    class Config:
+        from_attributes = True

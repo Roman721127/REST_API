@@ -1,22 +1,24 @@
-from typing import List, Dict, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import delete
+from models.book import BookORM
 from uuid import UUID
-from models import db
 
-async def get_all_books() -> List[Dict]:
-    return db
+async def get_all_books(db: AsyncSession, limit: int, offset: int):
+    result = await db.execute(select(BookORM).limit(limit).offset(offset))
+    return result.scalars().all()
 
-async def get_book_by_id(book_id: UUID) -> Optional[Dict]:
-    for book in db:
-        if book["id"] == book_id:
-            return book
-    return None
+async def get_book_by_id(db: AsyncSession, book_id: UUID):
+    result = await db.execute(select(BookORM).filter(BookORM.id == book_id))
+    return result.scalar_one_or_none()
 
-async def add_book(book_data: Dict) -> Dict:
-    db.append(book_data)
-    return book_data
+async def add_book(db: AsyncSession, book_data: dict):
+    book = BookORM(**book_data)
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+    return book
 
-async def delete_book(book_id: UUID) -> bool:
-    global db
-    initial_length = len(db)
-    db[:] = [book for book in db if book["id"] != book_id]
-    return len(db) < initial_length
+async def delete_book(db: AsyncSession, book_id: UUID):
+    await db.execute(delete(BookORM).where(BookORM.id == book_id))
+    await db.commit()
