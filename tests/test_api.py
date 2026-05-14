@@ -1,41 +1,60 @@
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient, ASGITransport
+import time
+
 from main import app
-from models import db
 
-client = TestClient(app)
+pytestmark = pytest.mark.asyncio
 
-def setup_function():
-    db.clear()
+@pytest.fixture
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
 
-def test_add_book():
-    response = client.post("/books", json={
-        "title": "Кобзар",
-        "author": "Тарас Шевченко",
-        "description": "Збірка поезій",
-        "status": "available",
-        "year": 1840
-    })
-    assert response.status_code == 201
-    data = response.json()
-    assert "id" in data
-    assert data["title"] == "Кобзар"
+@pytest.fixture
+async def auth_headers(client):
+    username = f"tester_{int(time.time())}"
+    password = "testpassword123"
+    
+    await client.post("/register", json={"username": username, "password": password})
+    
+    response = await client.post("/login", data={"username": username, "password": password})
+    token = response.json()["access_token"]
+    
+    return {"Authorization": f"Bearer {token}"}
 
-def test_get_books():
-    client.post("/books", json={"title": "1984", "author": "Орвелл", "status": "available", "year": 1949})
-    response = client.get("/books")
-    assert response.status_code == 200
-    assert len(response.json()) == 1
+async def test_unauthorized_access(client):
+    response = await client.get("/books")
+    assert response.status_code == 401
 
-def test_get_book_not_found():
-    response = client.get("/books/123e4567-e89b-12d3-a456-426614174000")
-    assert response.status_code == 404
+async def test_full_book_lifecycle_with_auth(client, auth_headers):
+    new_book = {
+        "title": "Secret FastAPI Book", 
+        "author": "Super Hacker", 
+        "year": 2026, 
+        "status": "available"
+    }
+    post_res = await client.post("/books", json=new_book, headers=auth_headers)
+    assert post_res.status_code == 201
+    
+    book_data = post_res.json()
+    book_id = book_data.get("_id") or book_data.get("id")
 
-def test_delete_book_idempotent():
-    post_resp = client.post("/books", json={"title": "Тест", "author": "Автор", "status": "available", "year": 2020})
-    book_id = post_resp.json()["id"]
+    get_res = await client.get(f"/books/{book_id}", headers=auth_headers)
+    assert get_res.status_code == 200
+    assert get_res.json()["title"] == "Secret FastAPI Book"
 
-    del_resp1 = client.delete(f"/books/{book_id}")
-    assert del_resp1.status_code == 204
+    update_data = {
+        "title": "Secret FastAPI Book Updated", 
+        "author": "Super Hacker", 
+        "year": 2026, 
+        "status": "borrowed"
+    }
+    put_res = await client.put(f"/books/{book_id}", json=update_data, headers=auth_headers)
+    assert put_res.status_code == 200
 
-    del_resp2 = client.delete(f"/books/{book_id}")
-    assert del_resp2.status_code == 204
+    del_res = await client.delete(f"/books/{book_id}", headers=auth_headers)
+    assert del_res.status_code == 204
+
+    check_del_res = await client.get(f"/books/{book_id}", headers=auth_headers)
+    assert check_del_res.status_code == 404
