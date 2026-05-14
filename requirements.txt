@@ -1,8 +1,5 @@
-fastapi
-uvicorn
-motor
-pydantic-mongo
-pytest
-pytest-asyncio
-httpx
+flask
+flask-restful
+flasgger
+pymongo
 certifi

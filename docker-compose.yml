@@ -10,8 +10,9 @@ services:
       - '27017:27017'
   api:
     build: .
+    command: python app.py
     ports:
-      - "8000:8000"
+      - "5000:5000"
     environment:
       MONGO_URL: "mongodb://mongo_admin:password@mongo_db:27017"
     depends_on:

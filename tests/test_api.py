@@ -1,35 +1,28 @@
 import pytest
-import asyncio
-from httpx import AsyncClient, ASGITransport
-from main import app
+from app import app
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
 
-@pytest.mark.asyncio
-async def test_crud_lifecycle():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        create_res = await ac.post("/books", json={
-            "title": "Test Book",
-            "author": "Author",
-            "status": "available",
-            "year": 2024
-        })
-        book_id = create_res.json()["_id"]
-        assert create_res.status_code == 201
+def test_full_book_lifecycle(client):
+    new_book = {"title": "Flask Book", "author": "Tester", "year": 2026, "status": "available"}
+    post_res = client.post('/books', json=new_book)
+    assert post_res.status_code == 201
+    book_id = post_res.get_json()["_id"]
 
-        update_res = await ac.put(f"/books/{book_id}", json={"title": "Updated Title"})
-        assert update_res.status_code == 200
-        assert update_res.json()["title"] == "Updated Title"
+    get_res = client.get(f'/books/{book_id}')
+    assert get_res.status_code == 200
+    assert get_res.get_json()["title"] == "Flask Book"
 
-        get_res = await ac.get(f"/books/{book_id}")
-        assert get_res.status_code == 200
+    update_data = {"title": "Updated Book", "author": "Tester", "year": 2026, "status": "borrowed"}
+    put_res = client.put(f'/books/{book_id}', json=update_data)
+    assert put_res.status_code == 200
 
-        del_res = await ac.delete(f"/books/{book_id}")
-        assert del_res.status_code == 204
+    del_res = client.delete(f'/books/{book_id}')
+    assert del_res.status_code == 204
 
-        ver_res = await ac.get(f"/books/{book_id}")
-        assert ver_res.status_code == 404
+    check_del_res = client.get(f'/books/{book_id}')
+    assert check_del_res.status_code == 404
