@@ -1,0 +1,19 @@
+services:
+  mongo_db:
+    image: mongo:latest
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongo_admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: library
+    ports:
+      - '27017:27017'
+  api:
+    build: .
+    command: python app.py
+    ports:
+      - "5000:5000"
+    environment:
+      MONGO_URL: "mongodb://mongo_admin:password@mongo_db:27017"
+    depends_on:
+      - mongo_db

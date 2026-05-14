@@ -1,41 +1,28 @@
-from fastapi.testclient import TestClient
-from main import app
-from models import db
+import pytest
+from app import app
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
 
-def setup_function():
-    db.clear()
+def test_full_book_lifecycle(client):
+    new_book = {"title": "Flask Book", "author": "Tester", "year": 2026, "status": "available"}
+    post_res = client.post('/books', json=new_book)
+    assert post_res.status_code == 201
+    book_id = post_res.get_json()["_id"]
 
-def test_add_book():
-    response = client.post("/books", json={
-        "title": "Кобзар",
-        "author": "Тарас Шевченко",
-        "description": "Збірка поезій",
-        "status": "available",
-        "year": 1840
-    })
-    assert response.status_code == 201
-    data = response.json()
-    assert "id" in data
-    assert data["title"] == "Кобзар"
+    get_res = client.get(f'/books/{book_id}')
+    assert get_res.status_code == 200
+    assert get_res.get_json()["title"] == "Flask Book"
 
-def test_get_books():
-    client.post("/books", json={"title": "1984", "author": "Орвелл", "status": "available", "year": 1949})
-    response = client.get("/books")
-    assert response.status_code == 200
-    assert len(response.json()) == 1
+    update_data = {"title": "Updated Book", "author": "Tester", "year": 2026, "status": "borrowed"}
+    put_res = client.put(f'/books/{book_id}', json=update_data)
+    assert put_res.status_code == 200
 
-def test_get_book_not_found():
-    response = client.get("/books/123e4567-e89b-12d3-a456-426614174000")
-    assert response.status_code == 404
+    del_res = client.delete(f'/books/{book_id}')
+    assert del_res.status_code == 204
 
-def test_delete_book_idempotent():
-    post_resp = client.post("/books", json={"title": "Тест", "author": "Автор", "status": "available", "year": 2020})
-    book_id = post_resp.json()["id"]
-
-    del_resp1 = client.delete(f"/books/{book_id}")
-    assert del_resp1.status_code == 204
-
-    del_resp2 = client.delete(f"/books/{book_id}")
-    assert del_resp2.status_code == 204
+    check_del_res = client.get(f'/books/{book_id}')
+    assert check_del_res.status_code == 404
