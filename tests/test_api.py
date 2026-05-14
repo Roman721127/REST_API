@@ -1,35 +1,60 @@
 import pytest
-import asyncio
 from httpx import AsyncClient, ASGITransport
+import time
+
 from main import app
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
-async def test_crud_lifecycle():
+@pytest.fixture
+async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        create_res = await ac.post("/books", json={
-            "title": "Test Book",
-            "author": "Author",
-            "status": "available",
-            "year": 2024
-        })
-        book_id = create_res.json()["_id"]
-        assert create_res.status_code == 201
+        yield ac
 
-        update_res = await ac.put(f"/books/{book_id}", json={"title": "Updated Title"})
-        assert update_res.status_code == 200
-        assert update_res.json()["title"] == "Updated Title"
+@pytest.fixture
+async def auth_headers(client):
+    username = f"tester_{int(time.time())}"
+    password = "testpassword123"
+    
+    await client.post("/register", json={"username": username, "password": password})
+    
+    response = await client.post("/login", data={"username": username, "password": password})
+    token = response.json()["access_token"]
+    
+    return {"Authorization": f"Bearer {token}"}
 
-        get_res = await ac.get(f"/books/{book_id}")
-        assert get_res.status_code == 200
+async def test_unauthorized_access(client):
+    response = await client.get("/books")
+    assert response.status_code == 401
 
-        del_res = await ac.delete(f"/books/{book_id}")
-        assert del_res.status_code == 204
+async def test_full_book_lifecycle_with_auth(client, auth_headers):
+    new_book = {
+        "title": "Secret FastAPI Book", 
+        "author": "Super Hacker", 
+        "year": 2026, 
+        "status": "available"
+    }
+    post_res = await client.post("/books", json=new_book, headers=auth_headers)
+    assert post_res.status_code == 201
+    
+    book_data = post_res.json()
+    book_id = book_data.get("_id") or book_data.get("id")
 
-        ver_res = await ac.get(f"/books/{book_id}")
-        assert ver_res.status_code == 404
+    get_res = await client.get(f"/books/{book_id}", headers=auth_headers)
+    assert get_res.status_code == 200
+    assert get_res.json()["title"] == "Secret FastAPI Book"
+
+    update_data = {
+        "title": "Secret FastAPI Book Updated", 
+        "author": "Super Hacker", 
+        "year": 2026, 
+        "status": "borrowed"
+    }
+    put_res = await client.put(f"/books/{book_id}", json=update_data, headers=auth_headers)
+    assert put_res.status_code == 200
+
+    del_res = await client.delete(f"/books/{book_id}", headers=auth_headers)
+    assert del_res.status_code == 204
+
+    check_del_res = await client.get(f"/books/{book_id}", headers=auth_headers)
+    assert check_del_res.status_code == 404

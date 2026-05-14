@@ -1,8 +1,9 @@
 fastapi
 uvicorn
+pymongo
 motor
-pydantic-mongo
 pytest
-pytest-asyncio
 httpx
-certifi
+pyjwt
+passlib[bcrypt]
+python-multipart
