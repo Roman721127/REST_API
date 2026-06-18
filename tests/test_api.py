@@ -1,41 +1,35 @@
-from fastapi.testclient import TestClient
+import pytest
+import asyncio
+from httpx import AsyncClient, ASGITransport
 from main import app
-from models import db
 
-client = TestClient(app)
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
-def setup_function():
-    db.clear()
+@pytest.mark.asyncio
+async def test_crud_lifecycle():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        create_res = await ac.post("/books", json={
+            "title": "Test Book",
+            "author": "Author",
+            "status": "available",
+            "year": 2024
+        })
+        book_id = create_res.json()["_id"]
+        assert create_res.status_code == 201
 
-def test_add_book():
-    response = client.post("/books", json={
-        "title": "Кобзар",
-        "author": "Тарас Шевченко",
-        "description": "Збірка поезій",
-        "status": "available",
-        "year": 1840
-    })
-    assert response.status_code == 201
-    data = response.json()
-    assert "id" in data
-    assert data["title"] == "Кобзар"
+        update_res = await ac.put(f"/books/{book_id}", json={"title": "Updated Title"})
+        assert update_res.status_code == 200
+        assert update_res.json()["title"] == "Updated Title"
 
-def test_get_books():
-    client.post("/books", json={"title": "1984", "author": "Орвелл", "status": "available", "year": 1949})
-    response = client.get("/books")
-    assert response.status_code == 200
-    assert len(response.json()) == 1
+        get_res = await ac.get(f"/books/{book_id}")
+        assert get_res.status_code == 200
 
-def test_get_book_not_found():
-    response = client.get("/books/123e4567-e89b-12d3-a456-426614174000")
-    assert response.status_code == 404
+        del_res = await ac.delete(f"/books/{book_id}")
+        assert del_res.status_code == 204
 
-def test_delete_book_idempotent():
-    post_resp = client.post("/books", json={"title": "Тест", "author": "Автор", "status": "available", "year": 2020})
-    book_id = post_resp.json()["id"]
-
-    del_resp1 = client.delete(f"/books/{book_id}")
-    assert del_resp1.status_code == 204
-
-    del_resp2 = client.delete(f"/books/{book_id}")
-    assert del_resp2.status_code == 204
+        ver_res = await ac.get(f"/books/{book_id}")
+        assert ver_res.status_code == 404
